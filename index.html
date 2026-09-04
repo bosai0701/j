@@ -110,10 +110,6 @@
       color:#888;
     }
 
-    /* =========================================
-       右上：通信状態
-    ========================================= */
-
     #connection-status {
       position:fixed;
       top:10px;
@@ -141,10 +137,6 @@
     #connection-status.offline {
       color:#d32f2f;
     }
-
-    /* =========================================
-       左上：時刻情報
-    ========================================= */
 
     #info-panel {
       position:absolute;
@@ -278,7 +270,6 @@ const infoPanel =
 
 /* =========================================
    接続状態
-   3種類のみ
 ========================================= */
 
 function setConnectionStatus(state) {
@@ -640,6 +631,9 @@ let previousTimestamp = '';
 let z10Generation = 0;
 let switchingToZ10 = false;
 
+let nowcastUpdating = false;
+let nowcastGeneration = 0;
+
 
 /* =========================================
    ひまわり
@@ -926,6 +920,15 @@ async function updateSatellite() {
       validTime +
       '/B13/TBB/{z}/{x}/{y}.jpg';
 
+    if (
+      generation !==
+      satGeneration
+    ) {
+
+      return;
+
+    }
+
     removeSatelliteLayer();
 
     if (
@@ -1012,12 +1015,6 @@ async function updateSatellite() {
       '衛星画像更新エラー:',
       error
     );
-
-    /*
-      インターネットには接続できているが
-      衛星データ取得に失敗した場合は
-      「接続不安定」
-    */
 
     if (navigator.onLine) {
 
@@ -1156,7 +1153,6 @@ async function checkJMAConnection() {
 
 /* =========================================
    通信状況
-   1秒ごと
 ========================================= */
 
 function startConnectionMonitor() {
@@ -1380,14 +1376,16 @@ async function fetchLatestTimes() {
 
 function jmaTileURL(
   x,
-  y
+  y,
+  time1,
+  time2
 ) {
 
   return (
     'https://www.jma.go.jp/bosai/jmatile/data/nowc/' +
-    latestTime1 +
+    time1 +
     '/none/' +
-    latestTime2 +
+    time2 +
     '/surf/hrpns/' +
     BASE_ZOOM +
     '/' +
@@ -1437,11 +1435,15 @@ function loadImage(url) {
    Z8モザイク
 ========================================= */
 
-async function createMosaic() {
+async function createMosaic(
+  time1,
+  time2,
+  generation
+) {
 
   if (
-    !latestTime1 ||
-    !latestTime2
+    !time1 ||
+    !time2
   ) {
 
     return false;
@@ -1521,19 +1523,33 @@ async function createMosaic() {
 
         (async () => {
 
-          if (!navigator.onLine)
+          if (
+            !navigator.onLine ||
+            generation !== nowcastGeneration
+          ) {
+
             return;
+
+          }
 
           const img =
             await loadImage(
               jmaTileURL(
                 x,
-                y
+                y,
+                time1,
+                time2
               )
             );
 
-          if (!navigator.onLine)
+          if (
+            !navigator.onLine ||
+            generation !== nowcastGeneration
+          ) {
+
             return;
+
+          }
 
           if (img) {
 
@@ -1585,6 +1601,14 @@ async function createMosaic() {
     jobs
   );
 
+  if (
+    generation !== nowcastGeneration
+  ) {
+
+    return false;
+
+  }
+
   if (!navigator.onLine) {
 
     if (!mapReady) {
@@ -1630,6 +1654,17 @@ async function createMosaic() {
       canvas.toBlob(
         blob => {
 
+          if (
+            generation !==
+            nowcastGeneration
+          ) {
+
+            resolve(false);
+
+            return;
+
+          }
+
           if (!blob) {
 
             if (mapReady) {
@@ -1670,6 +1705,21 @@ async function createMosaic() {
             URL.createObjectURL(
               blob
             );
+
+          if (
+            generation !==
+            nowcastGeneration
+          ) {
+
+            URL.revokeObjectURL(
+              newURL
+            );
+
+            resolve(false);
+
+            return;
+
+          }
 
           if (mosaicURL) {
 
@@ -1990,6 +2040,64 @@ function addOrUpdateZ8() {
 
 
 /* =========================================
+   古いZ10削除
+========================================= */
+
+function removeOldZ10Layers(
+  keepLayerId
+) {
+
+  const layers =
+    map.getStyle().layers ||
+    [];
+
+  for (
+    const layer of layers
+  ) {
+
+    if (
+      layer.id.startsWith(
+        'nowcast-z10-layer-'
+      ) &&
+      layer.id !== keepLayerId
+    ) {
+
+      const source =
+        layer.source;
+
+      if (
+        map.getLayer(
+          layer.id
+        )
+      ) {
+
+        map.removeLayer(
+          layer.id
+        );
+
+      }
+
+      if (
+        source &&
+        map.getSource(
+          source
+        )
+      ) {
+
+        map.removeSource(
+          source
+        );
+
+      }
+
+    }
+
+  }
+
+}
+
+
+/* =========================================
    Z10
 ========================================= */
 
@@ -1999,6 +2107,12 @@ function addZ10Layer(
 ) {
 
   if (!navigator.onLine)
+    return;
+
+  if (
+    !time1 ||
+    !time2
+  )
     return;
 
   const generation =
@@ -2018,6 +2132,8 @@ function addZ10Layer(
     '/none/' +
     time2 +
     '/surf/hrpns/10/{x}/{y}.png';
+
+  removeOldZ10Layers();
 
   map.addSource(
     sourceId,
@@ -2103,6 +2219,15 @@ function addZ10Layer(
     ) {
 
       if (
+        generation !==
+        z10Generation
+      ) {
+
+        return;
+
+      }
+
+      if (
         map.getLayer(
           'nowcast-z8-mosaic-layer'
         )
@@ -2116,52 +2241,9 @@ function addZ10Layer(
 
       }
 
-      const layers =
-        map.getStyle().layers ||
-        [];
-
-      for (
-        const layer of layers
-      ) {
-
-        if (
-          layer.id.startsWith(
-            'nowcast-z10-layer-'
-          ) &&
-          layer.id !== layerId
-        ) {
-
-          const oldSource =
-            layer.source;
-
-          if (
-            map.getLayer(
-              layer.id
-            )
-          ) {
-
-            map.removeLayer(
-              layer.id
-            );
-
-          }
-
-          if (
-            oldSource &&
-            map.getSource(
-              oldSource
-            )
-          ) {
-
-            map.removeSource(
-              oldSource
-            );
-
-          }
-
-        }
-
-      }
+      removeOldZ10Layers(
+        layerId
+      );
 
       switchingToZ10 =
         false;
@@ -2255,51 +2337,7 @@ function updateZoomLayers() {
 
   }
 
-  const layers =
-    map.getStyle().layers ||
-    [];
-
-  for (
-    const layer of layers
-  ) {
-
-    if (
-      layer.id.startsWith(
-        'nowcast-z10-layer-'
-      )
-    ) {
-
-      const source =
-        layer.source;
-
-      if (
-        map.getLayer(
-          layer.id
-        )
-      ) {
-
-        map.removeLayer(
-          layer.id
-        );
-
-      }
-
-      if (
-        source &&
-        map.getSource(
-          source
-        )
-      ) {
-
-        map.removeSource(
-          source
-        );
-
-      }
-
-    }
-
-  }
+  removeOldZ10Layers();
 
   switchingToZ10 =
     false;
@@ -2319,13 +2357,41 @@ map.on(
    ナウキャスト更新
 ========================================= */
 
-async function updateNowcastLayers() {
+async function updateNowcastLayers(
+  generation
+) {
+
+  if (
+    generation !==
+    nowcastGeneration
+  ) {
+
+    return false;
+
+  }
+
+  const time1 =
+    latestTime1;
+
+  const time2 =
+    latestTime2;
 
   const ready =
-    await createMosaic();
+    await createMosaic(
+      time1,
+      time2,
+      generation
+    );
 
-  if (!ready)
+  if (
+    !ready ||
+    generation !==
+    nowcastGeneration
+  ) {
+
     return false;
+
+  }
 
   addOrUpdateZ8();
 
@@ -2338,8 +2404,8 @@ async function updateNowcastLayers() {
       true;
 
     addZ10Layer(
-      latestTime1,
-      latestTime2
+      time1,
+      time2
     );
 
   }
@@ -2352,12 +2418,15 @@ async function updateNowcastLayers() {
 
 
 /* =========================================
-   3秒ごとのナウキャスト確認
+   ナウキャスト確認
 ========================================= */
 
 async function checkNowcastUpdate() {
 
   if (!mapReady)
+    return;
+
+  if (nowcastUpdating)
     return;
 
   if (!navigator.onLine) {
@@ -2370,47 +2439,66 @@ async function checkNowcastUpdate() {
 
   }
 
-  const changed =
-    await fetchLatestTimes();
+  nowcastUpdating =
+    true;
 
-  if (!changed)
-    return;
+  const generation =
+    ++nowcastGeneration;
 
-  const timestamp =
-    latestTime1 +
-    '_' +
-    latestTime2;
+  try {
 
-  if (
-    timestamp ===
-    previousTimestamp
-  ) {
+    const changed =
+      await fetchLatestTimes();
 
-    return;
+    if (
+      !changed ||
+      generation !== nowcastGeneration
+    ) {
 
-  }
+      return;
 
-  previousTimestamp =
-    timestamp;
+    }
 
-  const ready =
-    await updateNowcastLayers();
+    const timestamp =
+      latestTime1 +
+      '_' +
+      latestTime2;
 
-  if (ready) {
+    if (
+      timestamp ===
+      previousTimestamp
+    ) {
+
+      return;
+
+    }
+
+    const ready =
+      await updateNowcastLayers(
+        generation
+      );
+
+    if (
+      !ready ||
+      generation !==
+      nowcastGeneration
+    ) {
+
+      return;
+
+    }
+
+    previousTimestamp =
+      timestamp;
 
     checkJMAConnection();
 
   }
 
-  else {
+  finally {
 
-    if (navigator.onLine) {
-
-      setConnectionStatus(
-        'unstable'
-      );
-
-    }
+    nowcastUpdating =
+      false;
 
   }
 
@@ -2512,8 +2600,15 @@ async function initialize() {
   previousTimestamp =
     timestamp;
 
+  nowcastGeneration++;
+
+  const nowcastGenerationValue =
+    nowcastGeneration;
+
   const ready =
-    await updateNowcastLayers();
+    await updateNowcastLayers(
+      nowcastGenerationValue
+    );
 
   if (
     generation !==
@@ -2529,7 +2624,7 @@ async function initialize() {
     }
 
     initializing =
-      false;
+    false;
 
     return;
 
@@ -2552,6 +2647,10 @@ async function initialize() {
 window.addEventListener(
   'offline',
   () => {
+
+    nowcastGeneration++;
+
+    satGeneration++;
 
     setConnectionStatus(
       'offline'
@@ -2602,7 +2701,6 @@ window.addEventListener(
 
 /* =========================================
    通信状況
-   1秒ごと
 ========================================= */
 
 startConnectionMonitor();
@@ -2610,7 +2708,6 @@ startConnectionMonitor();
 
 /* =========================================
    ナウキャスト
-   3秒ごと
 ========================================= */
 
 nowcastTimer =
@@ -2633,7 +2730,6 @@ nowcastTimer =
 
 /* =========================================
    衛星
-   3秒ごと
 ========================================= */
 
 satelliteTimer =
@@ -2724,7 +2820,6 @@ updateClock();
 
 /* =========================================
    MapLibreエラー
-   エラー表示は「接続不安定」
 ========================================= */
 
 map.on(
@@ -2759,8 +2854,7 @@ map.on(
 
     }
 
-  }
-);
+  });
 
 
 /* =========================================

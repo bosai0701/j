@@ -11,7 +11,8 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@1.14.0/dist/maplibre-gl.css">
 
   <style>
-    html, body {
+    html,
+    body {
       width:100%;
       height:100%;
       margin:0;
@@ -137,10 +138,6 @@
       color:#d88a00;
     }
 
-    #connection-status.error {
-      color:#00AAFF;
-    }
-
     #connection-status.offline {
       color:#d32f2f;
     }
@@ -238,10 +235,18 @@ let loadingError = false;
 let mapReady = false;
 let initializing = false;
 
-let connectionCheckTimer = null;
-let jmaConnectionTimer = null;
-
 let initGeneration = 0;
+
+let jmaConnectionTimer = null;
+let nowcastTimer = null;
+let satelliteTimer = null;
+
+let initialDisplayTimer = null;
+
+
+/* =========================================
+   DOM
+========================================= */
 
 const loading =
   document.getElementById('loading');
@@ -264,9 +269,16 @@ const loadingSpinner =
 const connectionStatus =
   document.getElementById('connection-status');
 
+const mapElement =
+  document.getElementById('map');
+
+const infoPanel =
+  document.getElementById('info-panel');
+
 
 /* =========================================
-   接続状態表示
+   接続状態
+   3種類のみ
 ========================================= */
 
 function setConnectionStatus(state) {
@@ -285,16 +297,9 @@ function setConnectionStatus(state) {
     connectionStatus.textContent =
       '● 接続不安定';
 
-    connectionStatus.classList.add('unstable');
-
-  }
-
-  else if (state === 'error') {
-
-    connectionStatus.textContent =
-      '● 通信エラー';
-
-    connectionStatus.classList.add('error');
+    connectionStatus.classList.add(
+      'unstable'
+    );
 
   }
 
@@ -303,7 +308,9 @@ function setConnectionStatus(state) {
     connectionStatus.textContent =
       '● オフライン';
 
-    connectionStatus.classList.add('offline');
+    connectionStatus.classList.add(
+      'offline'
+    );
 
   }
 
@@ -313,6 +320,7 @@ function setConnectionStatus(state) {
       'block';
 
   }
+
 }
 
 
@@ -326,21 +334,37 @@ function showInitialError(message) {
 
   initGeneration++;
 
-  document.getElementById('map')
-    .style.visibility = 'hidden';
+  if (initialDisplayTimer) {
 
-  document.getElementById('info-panel')
-    .style.visibility = 'hidden';
+    clearTimeout(
+      initialDisplayTimer
+    );
 
-  loading.style.display = 'flex';
+    initialDisplayTimer = null;
 
-  loading.classList.remove('hide');
+  }
 
-  loadingSpinner.style.display = 'none';
+  mapElement.style.visibility =
+    'hidden';
 
-  loadingProgress.style.display = 'none';
+  infoPanel.style.visibility =
+    'hidden';
 
-  loadingPercent.style.display = 'none';
+  loading.style.display =
+    'flex';
+
+  loading.classList.remove(
+    'hide'
+  );
+
+  loadingSpinner.style.display =
+    'none';
+
+  loadingProgress.style.display =
+    'none';
+
+  loadingPercent.style.display =
+    'none';
 
   loadingStatus.innerHTML =
     message ||
@@ -349,14 +373,20 @@ function showInitialError(message) {
 
   if (!navigator.onLine) {
 
-    setConnectionStatus('offline');
+    setConnectionStatus(
+      'offline'
+    );
 
   }
+
   else {
 
-    setConnectionStatus('error');
+    setConnectionStatus(
+      'unstable'
+    );
 
   }
+
 }
 
 
@@ -368,21 +398,52 @@ function showLoading() {
 
   loadingError = false;
 
-  loading.style.display = 'flex';
+  if (initialDisplayTimer) {
 
-  loading.classList.remove('hide');
+    clearTimeout(
+      initialDisplayTimer
+    );
 
-  loadingSpinner.style.display = 'block';
+    initialDisplayTimer = null;
 
-  loadingProgress.style.display = 'block';
+  }
 
-  loadingPercent.style.display = 'block';
+  loading.style.display =
+    'flex';
+
+  loading.classList.remove(
+    'hide'
+  );
+
+  loadingSpinner.style.display =
+    'block';
+
+  loadingProgress.style.display =
+    'block';
+
+  loadingPercent.style.display =
+    'block';
+
+  loadingProgressBar.style.width =
+    '0%';
+
+  loadingPercent.textContent =
+    '0%';
 
 }
 
-function setLoading(text, percent) {
 
-  if (loadingError) return;
+/* =========================================
+   進捗
+========================================= */
+
+function setLoading(
+  text,
+  percent
+) {
+
+  if (loadingError)
+    return;
 
   if (!navigator.onLine) {
 
@@ -399,10 +460,17 @@ function setLoading(text, percent) {
 
   }
 
-  loadingStatus.textContent = text;
+  loadingStatus.textContent =
+    text;
 
   const value =
-    Math.max(0, Math.min(100, percent));
+    Math.max(
+      0,
+      Math.min(
+        100,
+        percent
+      )
+    );
 
   loadingProgressBar.style.width =
     value + '%';
@@ -412,72 +480,157 @@ function setLoading(text, percent) {
 
 }
 
-function hideLoading() {
 
-  if (loadingError) return;
+/* =========================================
+   初回表示
+========================================= */
 
-  if (!navigator.onLine) return;
+function showMapAfterLoading() {
 
-  loadingProgressBar.style.width = '100%';
+  if (loadingError)
+    return;
 
-  loadingPercent.textContent = '100%';
+  if (!navigator.onLine)
+    return;
+
+  loadingProgressBar.style.width =
+    '100%';
+
+  loadingPercent.textContent =
+    '100%';
+
+  loadingStatus.textContent =
+    '地図の表示準備が完了しました';
+
+  if (initialDisplayTimer) {
+
+    clearTimeout(
+      initialDisplayTimer
+    );
+
+    initialDisplayTimer = null;
+
+  }
 
   setTimeout(() => {
 
-    if (loadingError) return;
+    if (
+      loadingError ||
+      !navigator.onLine
+    ) {
 
-    if (!navigator.onLine) return;
+      return;
 
-    loading.classList.add('hide');
+    }
 
-    setTimeout(() => {
+    initialDisplayTimer =
+      setTimeout(() => {
 
-      if (
-        !loadingError &&
-        navigator.onLine
-      ) {
+        initialDisplayTimer = null;
 
-        loading.style.display = 'none';
+        if (
+          loadingError ||
+          !navigator.onLine
+        ) {
 
-      }
+          return;
 
-    }, 300);
+        }
 
-  }, 950);
+        mapElement.style.visibility =
+          'visible';
+
+        infoPanel.style.visibility =
+          'visible';
+
+        mapReady =
+          true;
+
+        connectionStatus.style.display =
+          'block';
+
+        setConnectionStatus(
+          'online'
+        );
+
+        requestAnimationFrame(() => {
+
+          map.resize();
+
+          map.triggerRepaint();
+
+        });
+
+        loading.classList.add(
+          'hide'
+        );
+
+        setTimeout(() => {
+
+          if (
+            !loadingError &&
+            navigator.onLine
+          ) {
+
+            loading.style.display =
+              'none';
+
+          }
+
+        }, 300);
+
+      }, 600);
+
+  }, 100);
 
 }
 
 
 /* =========================================
-   降水ナウキャスト設定
+   ナウキャスト設定
 ========================================= */
 
-const NOWCAST_OPACITY = 0.7;
+const NOWCAST_OPACITY =
+  0.7;
 
-const BASE_ZOOM = 8;
+const BASE_ZOOM =
+  8;
 
-const HIGH_ZOOM = 10;
+const HIGH_ZOOM =
+  10;
 
-const TILE_SIZE = 256;
+const TILE_SIZE =
+  256;
 
-const TILE_X_MIN = 212;
+const TILE_X_MIN =
+  212;
 
-const TILE_X_MAX = 243;
+const TILE_X_MAX =
+  243;
 
-const TILE_Y_MIN = 92;
+const TILE_Y_MIN =
+  92;
 
-const TILE_Y_MAX = 115;
+const TILE_Y_MAX =
+  115;
 
 const MOSAIC_WIDTH =
-  (TILE_X_MAX - TILE_X_MIN + 1) *
+  (
+    TILE_X_MAX -
+    TILE_X_MIN +
+    1
+  ) *
   TILE_SIZE;
 
 const MOSAIC_HEIGHT =
-  (TILE_Y_MAX - TILE_Y_MIN + 1) *
+  (
+    TILE_Y_MAX -
+    TILE_Y_MIN +
+    1
+  ) *
   TILE_SIZE;
 
 let latestTime1 = '';
-
 let latestTime2 = '';
 
 let mosaicURL = '';
@@ -485,39 +638,61 @@ let mosaicURL = '';
 let previousTimestamp = '';
 
 let z10Generation = 0;
-
 let switchingToZ10 = false;
 
 
 /* =========================================
-   ひまわり赤外線
+   ひまわり
 ========================================= */
 
-const SAT_SOURCE_ID = 'himawari';
+const SAT_SOURCE_ID =
+  'himawari';
 
-const SAT_LAYER_ID = 'himawari-layer';
+const SAT_LAYER_ID =
+  'himawari-layer';
 
 let latestSatValidTime = null;
+let latestSatBaseTime = null;
 
 let satChecking = false;
+let satGeneration = 0;
 
 
-function formatSatJST(utcString) {
+/* =========================================
+   衛星時刻
+========================================= */
+
+function formatSatJST(
+  utcString
+) {
+
+  const value =
+    String(utcString);
 
   const year =
-    Number(utcString.slice(0, 4));
+    Number(
+      value.slice(0,4)
+    );
 
   const month =
-    Number(utcString.slice(4, 6)) - 1;
+    Number(
+      value.slice(4,6)
+    ) - 1;
 
   const day =
-    Number(utcString.slice(6, 8));
+    Number(
+      value.slice(6,8)
+    );
 
   const hour =
-    Number(utcString.slice(8, 10));
+    Number(
+      value.slice(8,10)
+    );
 
   const minute =
-    Number(utcString.slice(10, 12));
+    Number(
+      value.slice(10,12)
+    );
 
   const date =
     new Date(
@@ -537,94 +712,207 @@ function formatSatJST(utcString) {
   const m =
     String(
       date.getUTCMonth() + 1
-    ).padStart(2, '0');
+    ).padStart(2,'0');
 
   const d =
     String(
       date.getUTCDate()
-    ).padStart(2, '0');
+    ).padStart(2,'0');
 
   const h =
     String(
       date.getUTCHours()
-    ).padStart(2, '0');
+    ).padStart(2,'0');
 
   const min =
     String(
       date.getUTCMinutes()
-    ).padStart(2, '0');
+    ).padStart(2,'0');
 
-  return `${date.getUTCFullYear()}/${m}/${d} ${h}:${min} JST`;
+  return (
+    `${date.getUTCFullYear()}/${m}/${d} ` +
+    `${h}:${min} JST`
+  );
 
 }
 
+
+/* =========================================
+   最新衛星時刻
+========================================= */
 
 async function getSatLatestTime() {
 
-  const response =
-    await fetch(
-      'https://www.jma.go.jp/bosai/himawari/data/satimg/targetTimes_fd.json?' +
-      Date.now(),
-      {
-        cache:'no-store'
-      }
+  const controller =
+    new AbortController();
+
+  const timeout =
+    setTimeout(
+      () => {
+        controller.abort();
+      },
+      5000
     );
 
-  if (!response.ok) {
+  try {
 
-    throw new Error(
-      'targetTimes_fd.json取得失敗'
+    const response =
+      await fetch(
+        'https://www.jma.go.jp/bosai/himawari/data/satimg/targetTimes_fd.json?' +
+        Date.now(),
+        {
+          cache:'no-store',
+          signal:controller.signal
+        }
+      );
+
+    clearTimeout(
+      timeout
     );
+
+    if (!response.ok) {
+
+      throw new Error(
+        'targetTimes_fd.json取得失敗'
+      );
+
+    }
+
+    const data =
+      await response.json();
+
+    if (
+      !Array.isArray(data) ||
+      data.length === 0
+    ) {
+
+      throw new Error(
+        '時刻データがありません'
+      );
+
+    }
+
+    data.sort(
+      (a,b) =>
+        String(a.validtime)
+          .localeCompare(
+            String(b.validtime)
+          )
+    );
+
+    return data[
+      data.length - 1
+    ];
 
   }
 
-  const data =
-    await response.json();
+  finally {
 
-  if (
-    !Array.isArray(data) ||
-    data.length === 0
-  ) {
-
-    throw new Error(
-      '時刻データがありません'
+    clearTimeout(
+      timeout
     );
 
   }
-
-  data.sort(
-    (a, b) =>
-      String(a.validtime)
-        .localeCompare(
-          String(b.validtime)
-        )
-  );
-
-  return data[data.length - 1];
 
 }
 
 
+/* =========================================
+   衛星レイヤー削除
+========================================= */
+
+function removeSatelliteLayer() {
+
+  if (
+    map.getLayer(
+      SAT_LAYER_ID
+    )
+  ) {
+
+    map.removeLayer(
+      SAT_LAYER_ID
+    );
+
+  }
+
+  if (
+    map.getSource(
+      SAT_SOURCE_ID
+    )
+  ) {
+
+    map.removeSource(
+      SAT_SOURCE_ID
+    );
+
+  }
+
+}
+
+
+/* =========================================
+   衛星画像更新
+========================================= */
+
 async function updateSatellite() {
 
-  if (satChecking) return;
+  if (satChecking)
+    return;
 
-  satChecking = true;
+  if (!map.loaded())
+    return;
+
+  if (!navigator.onLine) {
+
+    setConnectionStatus(
+      'offline'
+    );
+
+    return;
+
+  }
+
+  satChecking =
+    true;
+
+  const generation =
+    ++satGeneration;
 
   try {
 
     const target =
       await getSatLatestTime();
 
+    if (
+      generation !==
+      satGeneration
+    ) {
+
+      return;
+
+    }
+
     const baseTime =
-      String(target.basetime);
+      String(
+        target.basetime
+      );
 
     const validTime =
-      String(target.validtime);
+      String(
+        target.validtime
+      );
 
     if (
       latestSatValidTime ===
-      validTime
+        validTime &&
+      latestSatBaseTime ===
+        baseTime &&
+      map.getLayer(
+        SAT_LAYER_ID
+      ) &&
+      map.getSource(
+        SAT_SOURCE_ID
+      )
     ) {
 
       return;
@@ -638,27 +926,14 @@ async function updateSatellite() {
       validTime +
       '/B13/TBB/{z}/{x}/{y}.jpg';
 
-    if (
-      map.getLayer(
-        SAT_LAYER_ID
-      )
-    ) {
-
-      map.removeLayer(
-        SAT_LAYER_ID
-      );
-
-    }
+    removeSatelliteLayer();
 
     if (
-      map.getSource(
-        SAT_SOURCE_ID
-      )
+      generation !==
+      satGeneration
     ) {
 
-      map.removeSource(
-        SAT_SOURCE_ID
-      );
+      return;
 
     }
 
@@ -683,18 +958,6 @@ async function updateSatellite() {
       }
     );
 
-    /*
-      レイヤー順：
-
-      base
-        ↓
-      ひまわり
-        ↓
-      境界線 jma-mask
-        ↓
-      降水ナウキャスト
-    */
-
     map.addLayer(
       {
 
@@ -710,7 +973,8 @@ async function updateSatellite() {
 
         paint:{
 
-          'raster-opacity':0.65,
+          'raster-opacity':
+            0.65,
 
           'raster-resampling':
             'nearest',
@@ -727,6 +991,9 @@ async function updateSatellite() {
     latestSatValidTime =
       validTime;
 
+    latestSatBaseTime =
+      baseTime;
+
     document.getElementById(
       'sat-time'
     ).textContent =
@@ -734,6 +1001,8 @@ async function updateSatellite() {
       formatSatJST(
         validTime
       );
+
+    map.triggerRepaint();
 
   }
 
@@ -744,11 +1013,26 @@ async function updateSatellite() {
       error
     );
 
+    /*
+      インターネットには接続できているが
+      衛星データ取得に失敗した場合は
+      「接続不安定」
+    */
+
+    if (navigator.onLine) {
+
+      setConnectionStatus(
+        'unstable'
+      );
+
+    }
+
   }
 
   finally {
 
-    satChecking = false;
+    satChecking =
+      false;
 
   }
 
@@ -797,7 +1081,9 @@ async function checkJMAConnection() {
         }
       );
 
-    clearTimeout(timeout);
+    clearTimeout(
+      timeout
+    );
 
     const elapsed =
       performance.now() -
@@ -805,10 +1091,10 @@ async function checkJMAConnection() {
 
     if (!response.ok) {
 
-      if (mapReady) {
+      if (navigator.onLine) {
 
         setConnectionStatus(
-          'error'
+          'unstable'
         );
 
       }
@@ -817,13 +1103,16 @@ async function checkJMAConnection() {
 
     }
 
-    if (elapsed >= 1000) {
+    if (
+      elapsed >= 1000
+    ) {
 
       setConnectionStatus(
         'unstable'
       );
 
     }
+
     else {
 
       setConnectionStatus(
@@ -838,7 +1127,9 @@ async function checkJMAConnection() {
 
   catch (error) {
 
-    clearTimeout(timeout);
+    clearTimeout(
+      timeout
+    );
 
     if (!navigator.onLine) {
 
@@ -847,10 +1138,11 @@ async function checkJMAConnection() {
       );
 
     }
+
     else {
 
       setConnectionStatus(
-        'error'
+        'unstable'
       );
 
     }
@@ -863,7 +1155,8 @@ async function checkJMAConnection() {
 
 
 /* =========================================
-   常時通信状態確認
+   通信状況
+   1秒ごと
 ========================================= */
 
 function startConnectionMonitor() {
@@ -883,7 +1176,7 @@ function startConnectionMonitor() {
         checkJMAConnection();
 
       },
-      3000
+      1000
     );
 
 }
@@ -910,11 +1203,6 @@ async function fetchLatestTimes() {
 
   }
 
-  setLoading(
-    '気象庁データの時刻を取得しています…',
-    8
-  );
-
   const start =
     performance.now();
 
@@ -938,10 +1226,11 @@ async function fetchLatestTimes() {
       if (mapReady) {
 
         setConnectionStatus(
-          'error'
+          'unstable'
         );
 
       }
+
       else {
 
         showInitialError();
@@ -949,14 +1238,6 @@ async function fetchLatestTimes() {
       }
 
       return false;
-
-    }
-
-    if (elapsed >= 1000) {
-
-      setConnectionStatus(
-        'unstable'
-      );
 
     }
 
@@ -971,10 +1252,11 @@ async function fetchLatestTimes() {
       if (mapReady) {
 
         setConnectionStatus(
-          'error'
+          'unstable'
         );
 
       }
+
       else {
 
         showInitialError();
@@ -999,10 +1281,11 @@ async function fetchLatestTimes() {
       if (mapReady) {
 
         setConnectionStatus(
-          'error'
+          'unstable'
         );
 
       }
+
       else {
 
         showInitialError();
@@ -1031,7 +1314,19 @@ async function fetchLatestTimes() {
         String(newTime2)
       );
 
-    if (elapsed < 1000) {
+    if (
+      elapsed >= 1000
+    ) {
+
+      setConnectionStatus(
+        'unstable'
+      );
+
+    }
+
+    else if (
+      mapReady
+    ) {
 
       setConnectionStatus(
         'online'
@@ -1046,7 +1341,7 @@ async function fetchLatestTimes() {
   catch (error) {
 
     console.warn(
-      'JMA時刻取得エラー',
+      'JMA時刻取得エラー:',
       error
     );
 
@@ -1057,10 +1352,11 @@ async function fetchLatestTimes() {
       );
 
     }
+
     else {
 
       setConnectionStatus(
-        'error'
+        'unstable'
       );
 
     }
@@ -1082,7 +1378,10 @@ async function fetchLatestTimes() {
    JMAタイルURL
 ========================================= */
 
-function jmaTileURL(x, y) {
+function jmaTileURL(
+  x,
+  y
+) {
 
   return (
     'https://www.jma.go.jp/bosai/jmatile/data/nowc/' +
@@ -1107,33 +1406,35 @@ function jmaTileURL(x, y) {
 
 function loadImage(url) {
 
-  return new Promise(resolve => {
+  return new Promise(
+    resolve => {
 
-    const img =
-      new Image();
+      const img =
+        new Image();
 
-    img.decoding =
-      'async';
+      img.decoding =
+        'async';
 
-    img.crossOrigin =
-      'anonymous';
+      img.crossOrigin =
+        'anonymous';
 
-    img.onload =
-      () => resolve(img);
+      img.onload =
+        () => resolve(img);
 
-    img.onerror =
-      () => resolve(null);
+      img.onerror =
+        () => resolve(null);
 
-    img.src =
-      url;
+      img.src =
+        url;
 
-  });
+    }
+  );
 
 }
 
 
 /* =========================================
-   Z8モザイク作成
+   Z8モザイク
 ========================================= */
 
 async function createMosaic() {
@@ -1190,10 +1491,19 @@ async function createMosaic() {
   const jobs = [];
 
   const totalTiles =
-    (TILE_X_MAX - TILE_X_MIN + 1) *
-    (TILE_Y_MAX - TILE_Y_MIN + 1);
+    (
+      TILE_X_MAX -
+      TILE_X_MIN +
+      1
+    ) *
+    (
+      TILE_Y_MAX -
+      TILE_Y_MIN +
+      1
+    );
 
-  let loadedTiles = 0;
+  let loadedTiles =
+    0;
 
   for (
     let y = TILE_Y_MIN;
@@ -1216,7 +1526,10 @@ async function createMosaic() {
 
           const img =
             await loadImage(
-              jmaTileURL(x, y)
+              jmaTileURL(
+                x,
+                y
+              )
             );
 
           if (!navigator.onLine)
@@ -1225,11 +1538,17 @@ async function createMosaic() {
           if (img) {
 
             const dx =
-              (x - TILE_X_MIN) *
+              (
+                x -
+                TILE_X_MIN
+              ) *
               TILE_SIZE;
 
             const dy =
-              (y - TILE_Y_MIN) *
+              (
+                y -
+                TILE_Y_MIN
+              ) *
               TILE_SIZE;
 
             ctx.drawImage(
@@ -1250,7 +1569,8 @@ async function createMosaic() {
 
           setLoading(
             `降水タイルを読み込み中… ${loadedTiles}/${totalTiles}`,
-            15 + progress * 70
+            15 +
+            progress * 70
           );
 
         })()
@@ -1277,15 +1597,18 @@ async function createMosaic() {
 
   }
 
-  if (loadedTiles === 0) {
+  if (
+    loadedTiles === 0
+  ) {
 
     if (mapReady) {
 
       setConnectionStatus(
-        'error'
+        'unstable'
       );
 
     }
+
     else {
 
       showInitialError();
@@ -1312,10 +1635,11 @@ async function createMosaic() {
             if (mapReady) {
 
               setConnectionStatus(
-                'error'
+                'unstable'
               );
 
             }
+
             else {
 
               showInitialError();
@@ -1376,7 +1700,7 @@ async function createMosaic() {
 
 
 /* =========================================
-   タイル座標
+   座標
 ========================================= */
 
 function tileXToLng(x) {
@@ -1446,12 +1770,6 @@ const south =
 
 /* =========================================
    MapLibre
-   レイヤー順：
-
-   1. 淡色ノーマル地図
-   2. ひまわり赤外線
-   3. 境界線
-   4. 降水ナウキャスト
 ========================================= */
 
 const map =
@@ -1488,10 +1806,6 @@ const map =
 
       sources:{
 
-        /* =====================================
-           淡色ノーマル地図
-        ===================================== */
-
         'gsi-pale':{
 
           type:'raster',
@@ -1510,10 +1824,6 @@ const map =
             '© 国土地理院'
 
         },
-
-        /* =====================================
-           境界線
-        ===================================== */
 
         'jma-mask':{
 
@@ -1535,12 +1845,7 @@ const map =
 
       layers:[
 
-        /* =====================================
-           1. 淡色ノーマル地図
-        ===================================== */
-
         {
-
           id:'base',
 
           type:'raster',
@@ -1565,13 +1870,7 @@ const map =
 
         },
 
-        /* =====================================
-           2. 境界線
-           ※衛星を後からこの直前へ追加
-        ===================================== */
-
         {
-
           id:'jma-mask',
 
           type:'raster',
@@ -1606,14 +1905,20 @@ const map =
 
 
 /* =========================================
-   Z8追加・更新
-   境界線より上に追加
+   Z8
 ========================================= */
 
 function addOrUpdateZ8() {
 
   if (!mosaicURL)
     return;
+
+  const coordinates = [
+    [west,north],
+    [east,north],
+    [east,south],
+    [west,south]
+  ];
 
   if (
     !map.getSource(
@@ -1629,23 +1934,21 @@ function addOrUpdateZ8() {
 
         url:mosaicURL,
 
-        coordinates:[
-          [west,north],
-          [east,north],
-          [east,south],
-          [west,south]
-        ]
+        coordinates:
+          coordinates
 
       }
     );
 
     map.addLayer({
 
-      id:'nowcast-z8-mosaic-layer',
+      id:
+        'nowcast-z8-mosaic-layer',
 
       type:'raster',
 
-      source:'nowcast-z8-mosaic',
+      source:
+        'nowcast-z8-mosaic',
 
       minzoom:3,
 
@@ -1678,12 +1981,8 @@ function addOrUpdateZ8() {
 
       url:mosaicURL,
 
-      coordinates:[
-        [west,north],
-        [east,north],
-        [east,south],
-        [west,south]
-      ]
+      coordinates:
+        coordinates
 
     });
 
@@ -1726,7 +2025,9 @@ function addZ10Layer(
 
       type:'raster',
 
-      tiles:[url],
+      tiles:[
+        url
+      ],
 
       tileSize:256,
 
@@ -1785,12 +2086,21 @@ function addZ10Layer(
 
     }
 
-    const loaded =
+    if (
+      !map.getSource(
+        sourceId
+      )
+    ) {
+
+      return;
+
+    }
+
+    if (
       map.isSourceLoaded(
         sourceId
-      );
-
-    if (loaded) {
+      )
+    ) {
 
       if (
         map.getLayer(
@@ -1806,12 +2116,12 @@ function addZ10Layer(
 
       }
 
-      const oldLayers =
+      const layers =
         map.getStyle().layers ||
         [];
 
       for (
-        const layer of oldLayers
+        const layer of layers
       ) {
 
         if (
@@ -1898,20 +2208,23 @@ function updateZoomLayers() {
     zoom >= HIGH_ZOOM
   ) {
 
+    const layers =
+      map.getStyle().layers ||
+      [];
+
     const z10Exists =
-      map
-        .getStyle()
-        .layers
-        .some(
-          layer =>
-            layer.id.startsWith(
-              'nowcast-z10-layer-'
-            )
-        );
+      layers.some(
+        layer =>
+          layer.id.startsWith(
+            'nowcast-z10-layer-'
+          )
+      );
 
     if (
       !z10Exists &&
-      !switchingToZ10
+      !switchingToZ10 &&
+      latestTime1 &&
+      latestTime2
     ) {
 
       switchingToZ10 =
@@ -2039,6 +2352,72 @@ async function updateNowcastLayers() {
 
 
 /* =========================================
+   3秒ごとのナウキャスト確認
+========================================= */
+
+async function checkNowcastUpdate() {
+
+  if (!mapReady)
+    return;
+
+  if (!navigator.onLine) {
+
+    setConnectionStatus(
+      'offline'
+    );
+
+    return;
+
+  }
+
+  const changed =
+    await fetchLatestTimes();
+
+  if (!changed)
+    return;
+
+  const timestamp =
+    latestTime1 +
+    '_' +
+    latestTime2;
+
+  if (
+    timestamp ===
+    previousTimestamp
+  ) {
+
+    return;
+
+  }
+
+  previousTimestamp =
+    timestamp;
+
+  const ready =
+    await updateNowcastLayers();
+
+  if (ready) {
+
+    checkJMAConnection();
+
+  }
+
+  else {
+
+    if (navigator.onLine) {
+
+      setConnectionStatus(
+        'unstable'
+      );
+
+    }
+
+  }
+
+}
+
+
+/* =========================================
    初期化
 ========================================= */
 
@@ -2078,7 +2457,7 @@ async function initialize() {
   ) {
 
     initializing =
-      false;
+    false;
 
     return;
 
@@ -2094,6 +2473,11 @@ async function initialize() {
     return;
 
   }
+
+  setLoading(
+    '気象庁データの時刻を取得しています…',
+    8
+  );
 
   const timeResult =
     await fetchLatestTimes();
@@ -2120,6 +2504,14 @@ async function initialize() {
 
   }
 
+  const timestamp =
+    latestTime1 +
+    '_' +
+    latestTime2;
+
+  previousTimestamp =
+    timestamp;
+
   const ready =
     await updateNowcastLayers();
 
@@ -2143,35 +2535,7 @@ async function initialize() {
 
   }
 
-  document.getElementById(
-    'map'
-  ).style.visibility =
-    'visible';
-
-  document.getElementById(
-    'info-panel'
-  ).style.visibility =
-    'visible';
-
-  mapReady =
-    true;
-
-  connectionStatus.style.display =
-    'block';
-
-  setConnectionStatus(
-    'online'
-  );
-
-  updateZoomLayers();
-
-  requestAnimationFrame(() => {
-
-    map.resize();
-
-  });
-
-  hideLoading();
+  showMapAfterLoading();
 
   initializing =
     false;
@@ -2218,6 +2582,10 @@ window.addEventListener(
 
       checkJMAConnection();
 
+      updateSatellite();
+
+      checkNowcastUpdate();
+
       return;
 
     }
@@ -2233,118 +2601,57 @@ window.addEventListener(
 
 
 /* =========================================
-   ネットワーク状態監視
+   通信状況
+   1秒ごと
 ========================================= */
 
-connectionCheckTimer =
+startConnectionMonitor();
+
+
+/* =========================================
+   ナウキャスト
+   3秒ごと
+========================================= */
+
+nowcastTimer =
   setInterval(
     () => {
 
-      if (!navigator.onLine) {
+      if (
+        mapReady &&
+        !document.hidden
+      ) {
 
-        setConnectionStatus(
-          'offline'
-        );
-
-        if (
-          !mapReady &&
-          !loadingError
-        ) {
-
-          showInitialError(
-            'インターネットに接続されていません。<br>' +
-            '接続を確認しています…'
-          );
-
-        }
-
-        return;
-
-      }
-
-      if (mapReady) {
-
-        checkJMAConnection();
+        checkNowcastUpdate();
 
       }
 
     },
-    1000
+    3000
   );
 
 
 /* =========================================
-   5分ごとのナウキャスト更新
+   衛星
+   3秒ごと
 ========================================= */
 
-async function checkNowcastUpdate() {
+satelliteTimer =
+  setInterval(
+    () => {
 
-  if (!mapReady)
-    return;
+      if (
+        mapReady &&
+        !document.hidden
+      ) {
 
-  if (!navigator.onLine) {
+        updateSatellite();
 
-    setConnectionStatus(
-      'offline'
-    );
+      }
 
-    return;
-
-  }
-
-  const changed =
-    await fetchLatestTimes();
-
-  if (!changed)
-    return;
-
-  if (!map.loaded())
-    return;
-
-  const timestamp =
-    latestTime1 +
-    '_' +
-    latestTime2;
-
-  if (
-    timestamp ===
-    previousTimestamp
-  ) {
-
-    return;
-
-  }
-
-  previousTimestamp =
-    timestamp;
-
-  const ready =
-    await updateNowcastLayers();
-
-  if (ready) {
-
-    checkJMAConnection();
-
-  }
-  else {
-
-    if (navigator.onLine) {
-
-      setConnectionStatus(
-        'error'
-      );
-
-    }
-
-  }
-
-}
-
-
-setInterval(
-  checkNowcastUpdate,
-  5 * 60 * 1000
-);
+    },
+    3000
+  );
 
 
 /* =========================================
@@ -2417,6 +2724,7 @@ updateClock();
 
 /* =========================================
    MapLibreエラー
+   エラー表示は「接続不安定」
 ========================================= */
 
 map.on(
@@ -2433,10 +2741,18 @@ map.on(
         event.error
       );
 
-      if (mapReady) {
+      if (navigator.onLine) {
 
         setConnectionStatus(
-          'error'
+          'unstable'
+        );
+
+      }
+
+      else {
+
+        setConnectionStatus(
+          'offline'
         );
 
       }
@@ -2455,29 +2771,42 @@ map.on(
   'load',
   () => {
 
-    updateSatellite().then(() => {
+    updateSatellite();
 
-      initialize();
+    initialize();
 
-    });
+  }
+);
 
-    setInterval(
-      updateSatellite,
-      1000
-    );
 
-    document.addEventListener(
-      'visibilitychange',
-      () => {
+/* =========================================
+   アプリ復帰
+========================================= */
 
-        if (!document.hidden) {
+document.addEventListener(
+  'visibilitychange',
+  () => {
 
-          updateSatellite();
+    if (
+      !document.hidden &&
+      mapReady
+    ) {
 
-        }
+      updateSatellite();
 
-      }
-    );
+      checkNowcastUpdate();
+
+      checkJMAConnection();
+
+      requestAnimationFrame(() => {
+
+        map.resize();
+
+        map.triggerRepaint();
+
+      });
+
+    }
 
   }
 );

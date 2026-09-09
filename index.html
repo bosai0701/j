@@ -1714,13 +1714,13 @@ async function createMosaic() {
   for (
     let i = 0;
     i < tileList.length;
-    i += 9
+    i += 7
   ) {
 
     const batch =
       tileList.slice(
         i,
-        i + 9
+        i + 7
       );
 
     await Promise.all(

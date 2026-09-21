@@ -1708,19 +1708,19 @@ async function createMosaic() {
   }
 
   /*
-    4枚ずつ処理
+    10枚ずつ処理
   */
 
   for (
     let i = 0;
     i < tileList.length;
-    i += 7
+    i += 15
   ) {
 
     const batch =
       tileList.slice(
         i,
-        i + 7
+        i + 15
       );
 
     await Promise.all(

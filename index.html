@@ -168,6 +168,105 @@
     .maplibregl-ctrl-bottom-right {
       display:none !important;
     }
+
+    /* =========================================
+       現在地ボタン
+    ========================================= */
+
+    #location-btn {
+      position:fixed;
+      right:12px;
+      bottom:12px;
+      z-index:5000;
+
+      width:52px;
+      height:52px;
+
+      padding:0;
+      border:0;
+      border-radius:50%;
+
+      background:rgba(255,255,255,.95);
+      box-shadow:0 2px 8px rgba(0,0,0,.25);
+
+      display:flex;
+      align-items:center;
+      justify-content:center;
+
+      cursor:pointer;
+      user-select:none;
+      -webkit-tap-highlight-color:transparent;
+
+      backdrop-filter:blur(4px);
+      -webkit-backdrop-filter:blur(4px);
+
+      transition:
+        background .15s ease,
+        transform .15s ease;
+    }
+
+    #location-btn:active {
+      transform:scale(.92);
+    }
+
+    #location-btn.active {
+      background:#1976d2;
+    }
+
+    #location-btn svg {
+      width:25px;
+      height:25px;
+      display:block;
+      fill:none;
+      stroke:#333;
+      stroke-width:2;
+      stroke-linecap:round;
+      stroke-linejoin:round;
+    }
+
+    #location-btn.active svg {
+      stroke:#fff;
+    }
+
+    /* =========================================
+       現在地マーカー
+    ========================================= */
+
+    .user-location-marker {
+      position:relative;
+
+      width:18px;
+      height:18px;
+
+      border-radius:50%;
+
+      background:#1976d2;
+
+      border:3px solid #fff;
+
+      box-shadow:
+        0 0 0 2px rgba(25,118,210,.45),
+        0 2px 6px rgba(0,0,0,.35);
+    }
+
+    .user-location-marker::after {
+      content:"";
+
+      position:absolute;
+
+      left:50%;
+      top:50%;
+
+      width:6px;
+      height:6px;
+
+      transform:
+        translate(-50%,-50%);
+
+      border-radius:50%;
+
+      background:#fff;
+    }
   </style>
 </head>
 
@@ -219,6 +318,22 @@
 
 </div>
 
+<!-- 現在地ボタン -->
+<button
+  id="location-btn"
+  type="button"
+  aria-label="現在地を表示"
+  title="現在地"
+>
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="7"></circle>
+    <line x1="12" y1="2" x2="12" y2="5"></line>
+    <line x1="12" y1="19" x2="12" y2="22"></line>
+    <line x1="2" y1="12" x2="5" y2="12"></line>
+    <line x1="19" y1="12" x2="22" y2="12"></line>
+  </svg>
+</button>
+
 <script src="https://unpkg.com/maplibre-gl@1.14.0/dist/maplibre-gl.js"></script>
 
 <script>
@@ -234,6 +349,15 @@ let nowcastTimer = null;
 let satelliteTimer = null;
 
 let initialDisplayTimer = null;
+
+/* =========================================
+   現在地
+========================================= */
+
+let locationMarker = null;
+let locationTimer = null;
+let locationEnabled = false;
+let locationFirstMove = true;
 
 /* =========================================
    DOM
@@ -265,6 +389,9 @@ const mapElement =
 
 const infoPanel =
   document.getElementById('info-panel');
+
+const locationBtn =
+  document.getElementById('location-btn');
 
 /* =========================================
    接続状態
@@ -575,7 +702,7 @@ function showMapAfterLoading() {
 ========================================= */
 
 const NOWCAST_OPACITY =
-  0.7;
+  0.55;
 
 const BASE_ZOOM =
   8;
@@ -636,6 +763,220 @@ let satGeneration = 0;
 
 let activeSatelliteSourceId = null;
 let activeSatelliteLayerId = null;
+
+/* =========================================
+   現在地
+========================================= */
+
+function updateUserLocation() {
+
+  if (!locationEnabled)
+    return;
+
+  if (!navigator.geolocation) {
+
+    console.warn(
+      'このブラウザは位置情報に対応していません。'
+    );
+
+    return;
+
+  }
+
+  navigator.geolocation.getCurrentPosition(
+
+    position => {
+
+      if (!locationEnabled)
+        return;
+
+      const lng =
+        position.coords.longitude;
+
+      const lat =
+        position.coords.latitude;
+
+      if (
+        !Number.isFinite(lng) ||
+        !Number.isFinite(lat)
+      ) {
+
+        return;
+
+      }
+
+      if (!locationMarker) {
+
+        const element =
+          document.createElement('div');
+
+        element.className =
+          'user-location-marker';
+
+        locationMarker =
+          new maplibregl.Marker({
+            element:element,
+            anchor:'center'
+          })
+          .setLngLat([
+            lng,
+            lat
+          ])
+          .addTo(map);
+
+      }
+
+      else {
+
+        locationMarker.setLngLat([
+          lng,
+          lat
+        ]);
+
+      }
+
+      if (locationFirstMove) {
+
+        locationFirstMove =
+          false;
+
+        map.flyTo({
+
+          center:[
+            lng,
+            lat
+          ],
+
+          zoom:10,
+
+          duration:1000
+
+        });
+
+      }
+
+    },
+
+    error => {
+
+      console.warn(
+        '位置情報取得エラー:',
+        error
+      );
+
+    },
+
+    {
+      enableHighAccuracy:true,
+      timeout:10000,
+      maximumAge:0
+    }
+
+  );
+
+}
+
+/* =========================================
+   現在地開始
+========================================= */
+
+function startLocationTracking() {
+
+  if (locationEnabled)
+    return;
+
+  if (!navigator.geolocation) {
+
+    return;
+
+  }
+
+  locationEnabled =
+    true;
+
+  locationFirstMove =
+    true;
+
+  locationBtn.classList.add(
+    'active'
+  );
+
+  updateUserLocation();
+
+  if (locationTimer) {
+
+    clearInterval(
+      locationTimer
+    );
+
+  }
+
+  locationTimer =
+    setInterval(
+      () => {
+
+        if (
+          locationEnabled &&
+          !document.hidden
+        ) {
+
+          updateUserLocation();
+
+        }
+
+      },
+      3000
+    );
+
+}
+
+/* =========================================
+   現在地停止
+========================================= */
+
+function stopLocationTracking() {
+
+  locationEnabled =
+    false;
+
+  locationBtn.classList.remove(
+    'active'
+  );
+
+  if (locationTimer) {
+
+    clearInterval(
+      locationTimer
+    );
+
+    locationTimer = null;
+
+  }
+
+}
+
+/* =========================================
+   現在地ボタン
+========================================= */
+
+locationBtn.addEventListener(
+  'click',
+  () => {
+
+    if (locationEnabled) {
+
+      stopLocationTracking();
+
+    }
+
+    else {
+
+      startLocationTracking();
+
+    }
+
+  }
+);
 
 /* =========================================
    衛星時刻
@@ -791,6 +1132,64 @@ async function getSatLatestTime() {
 }
 
 /* =========================================
+   最新衛星レイヤー挿入位置
+========================================= */
+
+function getSatelliteBeforeLayerId() {
+
+  if (
+    map.getLayer(
+      'nowcast-z10-layer-'
+    )
+  ) {
+
+    return 'nowcast-z10-layer-';
+
+  }
+
+  if (
+    map.getLayer(
+      'nowcast-z8-mosaic-layer'
+    )
+  ) {
+
+    return 'nowcast-z8-mosaic-layer';
+
+  }
+
+  const layers =
+    map.getStyle().layers ||
+    [];
+
+  const z10Layer =
+    layers.find(
+      layer =>
+        layer.id.startsWith(
+          'nowcast-z10-layer-'
+        )
+    );
+
+  if (z10Layer) {
+
+    return z10Layer.id;
+
+  }
+
+  if (
+    map.getLayer(
+      'nowcast-z8-mosaic-layer'
+    )
+  ) {
+
+    return 'nowcast-z8-mosaic-layer';
+
+  }
+
+  return 'jma-mask';
+
+}
+
+/* =========================================
    衛星レイヤー削除
 ========================================= */
 
@@ -894,7 +1293,6 @@ function removeOldSatelliteLayers(
 
 /* =========================================
    衛星画像更新
-   新画像を先に読み込む
 ========================================= */
 
 async function updateSatellite() {
@@ -1000,6 +1398,9 @@ async function updateSatellite() {
       }
     );
 
+    const beforeLayerId =
+      getSatelliteBeforeLayerId();
+
     map.addLayer(
       {
 
@@ -1027,7 +1428,7 @@ async function updateSatellite() {
         }
 
       },
-      'jma-mask'
+      beforeLayerId
     );
 
     const waitStart =
@@ -1679,11 +2080,6 @@ async function createMosaic() {
   let loadedTiles =
     0;
 
-  /*
-    元の処理と同じ順番で
-    タイル座標を作成
-  */
-
   const tileList = [];
 
   for (
@@ -1706,10 +2102,6 @@ async function createMosaic() {
     }
 
   }
-
-  /*
-    10枚ずつ処理
-  */
 
   for (
     let i = 0;
@@ -2137,34 +2529,37 @@ function addOrUpdateZ8() {
       }
     );
 
-    map.addLayer({
+    map.addLayer(
+      {
 
-      id:
-        'nowcast-z8-mosaic-layer',
+        id:
+          'nowcast-z8-mosaic-layer',
 
-      type:'raster',
+        type:'raster',
 
-      source:
-        'nowcast-z8-mosaic',
+        source:
+          'nowcast-z8-mosaic',
 
-      minzoom:3,
+        minzoom:3,
 
-      maxzoom:10,
+        maxzoom:10,
 
-      paint:{
+        paint:{
 
-        'raster-opacity':
-          NOWCAST_OPACITY,
+          'raster-opacity':
+            NOWCAST_OPACITY,
 
-        'raster-resampling':
-          'nearest',
+          'raster-resampling':
+            'nearest',
 
-        'raster-fade-duration':
-          0
+          'raster-fade-duration':
+            0
 
-      }
+        }
 
-    });
+      },
+      'jma-mask'
+    );
 
     return;
 
@@ -2234,32 +2629,35 @@ function addZ10Layer(
     }
   );
 
-  map.addLayer({
+  map.addLayer(
+    {
 
-    id:layerId,
+      id:layerId,
 
-    type:'raster',
+      type:'raster',
 
-    source:sourceId,
+      source:sourceId,
 
-    minzoom:10,
+      minzoom:10,
 
-    maxzoom:14,
+      maxzoom:14,
 
-    paint:{
+      paint:{
 
-      'raster-opacity':
-        NOWCAST_OPACITY,
+        'raster-opacity':
+          NOWCAST_OPACITY,
 
-      'raster-resampling':
-        'nearest',
+        'raster-resampling':
+          'nearest',
 
-      'raster-fade-duration':
-        0
+        'raster-fade-duration':
+          0
 
-    }
+      }
 
-  });
+    },
+    'jma-mask'
+  );
 
   const checkLoaded = () => {
 
@@ -2774,6 +3172,12 @@ window.addEventListener(
 
       checkNowcastUpdate();
 
+      if (locationEnabled) {
+
+        updateUserLocation();
+
+      }
+
       return;
 
     }
@@ -2975,6 +3379,12 @@ document.addEventListener(
       checkNowcastUpdate();
 
       checkJMAConnection();
+
+      if (locationEnabled) {
+
+        updateUserLocation();
+
+      }
 
       requestAnimationFrame(() => {
 

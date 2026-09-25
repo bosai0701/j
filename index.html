@@ -2106,13 +2106,13 @@ async function createMosaic() {
   for (
     let i = 0;
     i < tileList.length;
-    i += 20
+    i += 1
   ) {
 
     const batch =
       tileList.slice(
         i,
-        i + 20
+        i + 1
       );
 
     await Promise.all(

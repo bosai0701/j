@@ -31,7 +31,7 @@
     }
 
     .maplibregl-canvas {
-      image-rendering:pixelated;
+      image-rendering:auto;
       transform:translateZ(0);
     }
 
@@ -1137,36 +1137,14 @@ async function getSatLatestTime() {
 
 function getSatelliteBeforeLayerId() {
 
-  if (
-    map.getLayer(
-      'nowcast-z10-layer-'
-    )
-  ) {
-
-    return 'nowcast-z10-layer-';
-
-  }
-
-  if (
-    map.getLayer(
-      'nowcast-z8-mosaic-layer'
-    )
-  ) {
-
-    return 'nowcast-z8-mosaic-layer';
-
-  }
-
   const layers =
     map.getStyle().layers ||
     [];
 
+  // Z10 は generation 番号付きなので、実在するレイヤーを探す。
   const z10Layer =
-    layers.find(
-      layer =>
-        layer.id.startsWith(
-          'nowcast-z10-layer-'
-        )
+    layers.find(layer =>
+      layer.id.startsWith('nowcast-z10-layer-')
     );
 
   if (z10Layer) {
@@ -1175,17 +1153,21 @@ function getSatelliteBeforeLayerId() {
 
   }
 
-  if (
-    map.getLayer(
-      'nowcast-z8-mosaic-layer'
-    )
-  ) {
+  // Z8 が存在する場合は、その下に衛星を置く。
+  if (map.getLayer('nowcast-z8-mosaic-layer')) {
 
     return 'nowcast-z8-mosaic-layer';
 
   }
 
-  return 'jma-mask';
+  // ナウキャストがまだ無い初期状態では JMA マスクの下に置く。
+  if (map.getLayer('jma-mask')) {
+
+    return 'jma-mask';
+
+  }
+
+  return undefined;
 
 }
 
@@ -1420,7 +1402,7 @@ async function updateSatellite() {
             0.65,
 
           'raster-resampling':
-            'nearest',
+            'linear',
 
           'raster-fade-duration':
             0
@@ -2106,13 +2088,13 @@ async function createMosaic() {
   for (
     let i = 0;
     i < tileList.length;
-    i += 300
+    i += 20
   ) {
 
     const batch =
       tileList.slice(
         i,
-        i + 300
+        i + 20
       );
 
     await Promise.all(
